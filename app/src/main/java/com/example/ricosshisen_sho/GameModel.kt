@@ -6,6 +6,7 @@ import android.media.SoundPool
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -50,6 +51,29 @@ class ShisenShoGame(initialRows: Int, initialCols: Int, val context: Context) {
 
     var board by mutableStateOf(List(rows) { List(cols) { Tile(0) } })
     private var initialBoardState: List<List<Tile>> = emptyList()
+
+    // --- UNDO LOGIC START ---
+    private val history = mutableStateListOf<Pair<Pair<Int, Int>, Pair<Int, Int>>>()
+    val canUndo: Boolean get() = history.isNotEmpty()
+
+    fun undoLastMove() {
+        if (history.isNotEmpty()) {
+            val lastMove = history.removeAt(history.size - 1)
+            val (p1, p2) = lastMove
+
+            board = board.mapIndexed { r, rowList ->
+                rowList.mapIndexed { c, tile ->
+                    if ((r == p1.first && c == p1.second) || (r == p2.first && c == p2.second)) {
+                        tile.copy(isRemoved = false, isSelected = false, isHint = false)
+                    } else tile
+                }
+            }
+            lastPath = null
+            selectedTile = null
+            if (gameState == GameState.NO_MOVES) gameState = GameState.PLAYING
+        }
+    }
+    // --- UNDO LOGIC END ---
 
     var selectedTile by mutableStateOf<Pair<Int, Int>?>(null)
     var gameState by mutableStateOf(GameState.PLAYING)
@@ -98,7 +122,7 @@ class ShisenShoGame(initialRows: Int, initialCols: Int, val context: Context) {
             mode == "custom" -> "Custom"
             r <= 5 -> "Easy"
             r <= 7 -> "Normal"
-            c >= 21 -> "Extreme" // New Extreme check
+            c >= 21 -> "Extreme"
             else -> "Hard"
         }
     }
@@ -165,6 +189,7 @@ class ShisenShoGame(initialRows: Int, initialCols: Int, val context: Context) {
         lastHintTime = -hintCooldownSeconds
         gameState = GameState.PLAYING
         lastPath = null
+        history.clear() // Clear history on new game/retry
     }
 
     fun onTileClick(row: Int, col: Int, view: android.view.View) {
@@ -191,6 +216,9 @@ class ShisenShoGame(initialRows: Int, initialCols: Int, val context: Context) {
                 if (connectionPath != null) {
                     playSound(matchSoundId)
                     lastPath = connectionPath
+
+                    // Add move to history for Undo
+                    history.add((r1 to c1) to (row to col))
 
                     val nextBoard = board.mapIndexed { r, list ->
                         list.mapIndexed { c, t ->
@@ -271,6 +299,7 @@ class ShisenShoGame(initialRows: Int, initialCols: Int, val context: Context) {
         shufflesRemaining--
         selectedTile = null
         lastPath = null
+        history.clear() // Shuffling invalidates undo history usually to prevent bugs
         gameState = GameState.PLAYING
         checkForDeadlock()
     }

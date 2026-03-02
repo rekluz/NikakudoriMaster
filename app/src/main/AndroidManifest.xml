@@ -5,21 +5,11 @@
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/splash_icon"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/splash_icon"
         android:supportsRtl="true"
         android:theme="@style/Theme.RicosShisenSho">
-
-        <activity
-            android:name=".SplashActivity"
-            android:exported="true"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.RicosShisenSho"> <intent-filter>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LAUNCHER" />
-        </intent-filter>
-        </activity>
 
         <activity
             android:name=".MainActivity"
@@ -27,7 +17,13 @@
             android:label="@string/app_name"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout"
-            android:theme="@style/Theme.RicosShisenSho">
+            android:theme="@style/Theme.App.Starting">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
         </activity>
 
     </application>

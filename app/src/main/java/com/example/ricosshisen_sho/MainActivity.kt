@@ -1,6 +1,10 @@
 package com.example.ricosshisen_sho
 
+import android.os.Build
 import android.os.Bundle
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -46,6 +50,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope // ADDED THIS IMPORT
 import com.example.ricosshisen_sho.ui.theme.RicosShisenShoTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -56,19 +62,25 @@ class MainActivity : ComponentActivity() {
     private lateinit var game: ShisenShoGame
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+
+        var keepSplashScreen = true
+        splashScreen.setKeepOnScreenCondition { keepSplashScreen }
+        lifecycleScope.launch {
+            delay(800)
+            keepSplashScreen = false
+        }
+
         game = ShisenShoGame(initialRows = 8, initialCols = 17, context = this)
         game.bgThemeColor = Color(0xFF002147)
+
         enableEdgeToEdge()
+        hideSystemUI()
+
         setContent {
             RicosShisenShoTheme {
                 val currentGame = remember { game }
-                var isVisible by remember { mutableStateOf(false) }
-
-                LaunchedEffect(Unit) {
-                    delay(150)
-                    isVisible = true
-                }
 
                 DisposableEffect(Unit) { onDispose { currentGame.releaseSounds() } }
 
@@ -82,13 +94,41 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Surface(modifier = Modifier.fillMaxSize(), color = currentGame.bgThemeColor) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        if (isVisible) {
-                            ShisenShoScreen(game = currentGame, onExit = { finish() })
-                        }
-                    }
+                    ShisenShoScreen(game = currentGame, onExit = { finish() })
                 }
             }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (::game.isInitialized && game.gameState == GameState.PLAYING) {
+            game.gameState = GameState.PAUSED
+        }
+    }
+
+    private fun hideSystemUI() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let { controller ->
+                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN)
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            hideSystemUI()
         }
     }
 }
@@ -145,7 +185,9 @@ fun ShisenShoScreen(game: ShisenShoGame, onExit: () -> Unit) {
                     val tileHeight = slotHeightDp * vStretch
                     val totalGridHeight = slotHeightDp * (game.rows - 1) + tileHeight
                     val verticalOffset = (heightDp - totalGridHeight) / 2f
-                    val boardOffsetX = if (game.boardWidthScale < 1f) (widthDp - scaledWidthDp) / 2f else 0.dp
+
+                    val baseOffsetX = if (game.boardWidthScale < 1f) (widthDp - scaledWidthDp) / 2f else 0.dp
+                    val boardOffsetX = if (game.boardMode == "custom") baseOffsetX + slotWidthDp else baseOffsetX
 
                     Box(modifier = Modifier.fillMaxSize().offset(x = boardOffsetX, y = verticalOffset)) {
                         for (r in 0 until game.rows) {
@@ -206,6 +248,7 @@ fun ShisenShoScreen(game: ShisenShoGame, onExit: () -> Unit) {
                 val hintLabel = if (hintAvailable) "HINT" else "HINT (${game.hintSecondsRemaining})"
                 MenuPillButton(hintLabel, enabled = hintAvailable) { game.showHint() }
                 MenuPillButton("SHUFFLE (${game.shufflesRemaining})", enabled = game.canShuffle) { game.shuffleBoard() }
+                MenuPillButton("UNDO", enabled = game.canUndo) { game.undoLastMove() }
                 MenuPillButton("OPTIONS") { game.gameState = GameState.OPTIONS }
                 MenuPillButton("ABOUT") { game.gameState = GameState.ABOUT }
             }
@@ -224,7 +267,6 @@ fun ShisenShoScreen(game: ShisenShoGame, onExit: () -> Unit) {
                 }
             }
         }
-
         Canvas(modifier = Modifier.fillMaxSize().zIndex(3000f)) { fireworks.forEach { it.draw(this) } }
     }
 }
@@ -236,7 +278,6 @@ fun TileView(tile: Tile, modifier: Modifier, isPaused: Boolean, isMatching: Bool
     val tileImageId = remember(tile.imageName) { context.resources.getIdentifier(tile.imageName, "drawable", context.packageName) }
     val backImageId = remember { context.resources.getIdentifier("tile_back", "drawable", context.packageName) }
 
-    // Optimization: Only run animation state if tile is currently matching
     val alpha by if (isMatching) {
         val infiniteTransition = rememberInfiniteTransition(label = "flash")
         infiniteTransition.animateFloat(
